@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Box, Typography, Grid, Paper, Card, CardContent, 
-  LinearProgress, Chip, List, ListItem, ListItemText,
-  ListItemIcon, Divider, CircularProgress, Alert, ListItemButton, ListItemAvatar, Avatar, Button
+  Box, Typography, Paper, Card, CardContent, 
+  List, ListItem, ListItemText,
+  Divider, CircularProgress, ListItemAvatar, Avatar, Button
 } from '@mui/material';
 import { 
-  TrendingUp, Warning, Block, Report,
-  Person, Message, Shield, Analytics
+  Warning, Block, Report,
+  Person, Message
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';

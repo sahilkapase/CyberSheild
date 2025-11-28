@@ -1,8 +1,6 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Box, Typography, Paper } from '@mui/material';
-import { Block as BlockIcon } from '@mui/icons-material';
 
 interface AdminRouteProps {
   children: React.ReactNode;

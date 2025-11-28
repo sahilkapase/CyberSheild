@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Box, Typography, Paper, FormControl, FormLabel,
   RadioGroup, FormControlLabel, Radio, Slider, Switch,
-  Button, Divider, Alert, Snackbar, Card, CardContent
+  Button, Divider, Alert, Snackbar
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -11,10 +11,8 @@ import {
   Block as BlockIcon
 } from '@mui/icons-material';
 import Layout from '../components/Layout';
-import { useAuth } from '../contexts/AuthContext';
 
 const Settings: React.FC = () => {
-  const { user } = useAuth();
   
   // Settings state
   const [sensitivityLevel, setSensitivityLevel] = useState<string>('medium');

@@ -2,15 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { 
   Box, Typography, Paper, Table, TableBody, TableCell, 
   TableContainer, TableHead, TableRow, Chip, Button,
-  IconButton, Pagination, Dialog, DialogTitle, DialogContent,
+  Dialog, DialogTitle, DialogContent,
   DialogActions, CircularProgress, Alert, Card, CardContent, Divider,
   TablePagination
 } from '@mui/material';
 import { 
   Visibility as ViewIcon, 
   Download as DownloadIcon,
-  Warning as WarningIcon,
-  Person as PersonIcon,
   Report as ReportIcon
 } from '@mui/icons-material';
 import Layout from '../components/Layout';

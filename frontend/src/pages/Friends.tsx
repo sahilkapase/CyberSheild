@@ -14,7 +14,6 @@ import {
   PersonRemove as PersonRemoveIcon
 } from '@mui/icons-material';
 import Layout from '../components/Layout';
-import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 
 interface User {
@@ -48,7 +47,6 @@ interface AlertState {
 }
 
 const Friends: React.FC = () => {
-  const { user } = useAuth();
   const [tabValue, setTabValue] = useState(0);
   const [friends, setFriends] = useState<User[]>([]);
   const [receivedRequests, setReceivedRequests] = useState<FriendRequest[]>([]);
