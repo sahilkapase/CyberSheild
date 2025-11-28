@@ -1,10 +1,17 @@
 # Render Deployment Instructions
 
-## Critical Settings in Render Dashboard
+## ⚠️ CRITICAL: Update Start Command in Render Dashboard
 
-1. **Root Directory**: Leave empty (use repo root) OR set to `backend`
-2. **Build Command**: `cd backend && pip install -r requirements.txt`
-3. **Start Command**: `python start_backend.py`
+**The error "ModuleNotFoundError: No module named 'app'" happens because Render is using the OLD start command.**
+
+## Required Settings in Render Dashboard
+
+1. Go to your Render service → **Settings** tab
+2. **Root Directory**: Leave **EMPTY** (repo root) - DO NOT set to `backend`
+3. **Build Command**: `cd backend && pip install -r requirements.txt`
+4. **Start Command**: `python start_backend.py` ⚠️ **MUST BE THIS EXACTLY**
+5. Click **Save Changes**
+6. Click **Manual Deploy** → **Deploy latest commit**
 
 ## Environment Variables
 
