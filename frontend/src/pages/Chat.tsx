@@ -1,21 +1,46 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { 
   Box, Typography, Paper, TextField, Button, Avatar, 
   List, ListItem, ListItemAvatar, ListItemText, Divider,
-  Alert, Snackbar, IconButton, ListItemButton, Chip, Badge
+  Alert, Snackbar, IconButton, ListItemButton, Chip, Badge,
+  InputAdornment, LinearProgress, Tooltip
 } from '@mui/material';
 import { 
   Send as SendIcon, 
   Person as PersonIcon,
   Circle as OnlineIcon,
   Refresh as RefreshIcon,
-  Notifications as NotificationIcon
+  Notifications as NotificationIcon,
+  Search as SearchIcon
 } from '@mui/icons-material';
 import Layout from '../components/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import axios from 'axios';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+const deriveDefaultWsBase = (apiBase: string) => {
+  try {
+    const url = new URL(apiBase);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.pathname = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    if (apiBase.startsWith('https://')) {
+      return apiBase.replace('https://', 'wss://');
+    }
+    if (apiBase.startsWith('http://')) {
+      return apiBase.replace('http://', 'ws://');
+    }
+    return apiBase;
+  }
+};
+
+const WS_BASE_URL = (process.env.REACT_APP_WEBSOCKET_URL || deriveDefaultWsBase(API_BASE_URL)).replace(/\/$/, '');
 
 interface User {
   id: number;
@@ -51,10 +76,71 @@ const Chat: React.FC = () => {
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const [alert, setAlert] = useState<AlertState>({ type: 'info', message: '', open: false });
   const [unreadCounts, setUnreadCounts] = useState<{[userId: number]: number}>({});
+  const [contactSearch, setContactSearch] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const maxReconnectAttempts = 5;
+
+  const filteredUsers = useMemo(() => {
+    const query = contactSearch.trim().toLowerCase();
+    if (!query) {
+      return users;
+    }
+    return users.filter((u) =>
+      u.username.toLowerCase().includes(query) ||
+      u.full_name.toLowerCase().includes(query)
+    );
+  }, [users, contactSearch]);
+
+  interface ConversationStats {
+    totalMessages: number;
+    abusiveCount: number;
+    abusePercentage: number;
+    lastMessageTime: string | null;
+    averageResponseMs: number | null;
+  }
+
+  const conversationStats = useMemo<ConversationStats>(() => {
+    if (!messages.length || !selectedUser) {
+      return {
+        totalMessages: 0,
+        abusiveCount: 0,
+        abusePercentage: 0,
+        lastMessageTime: null,
+        averageResponseMs: null
+      };
+    }
+
+    const totalMessages = messages.length;
+    const abusiveCount = messages.filter((m) => m.is_abusive).length;
+    const abusePercentage = totalMessages ? (abusiveCount / totalMessages) * 100 : 0;
+    const lastMessageTime = messages[messages.length - 1]?.created_at ?? null;
+
+    let cumulativeResponse = 0;
+    let responseSwaps = 0;
+    for (let i = 1; i < messages.length; i++) {
+      const current = messages[i];
+      const previous = messages[i - 1];
+      if (current.sender_id !== previous.sender_id) {
+        const diff =
+          new Date(current.created_at).getTime() -
+          new Date(previous.created_at).getTime();
+        if (diff > 0 && diff < 1000 * 60 * 60 * 24) {
+          cumulativeResponse += diff;
+          responseSwaps += 1;
+        }
+      }
+    }
+
+    return {
+      totalMessages,
+      abusiveCount,
+      abusePercentage,
+      lastMessageTime,
+      averageResponseMs: responseSwaps ? cumulativeResponse / responseSwaps : null
+    };
+  }, [messages, selectedUser]);
 
   // WebSocket connection management
   const connectWebSocket = useCallback(() => {
@@ -67,7 +153,7 @@ const Chat: React.FC = () => {
     }
 
     setConnectionStatus('connecting');
-    const ws = new WebSocket(`ws://localhost:8000/ws/${user.id}`);
+    const ws = new WebSocket(`${WS_BASE_URL}/ws/${user.id}`);
     
     ws.onopen = () => {
       console.log('WebSocket connection established');
@@ -168,7 +254,7 @@ const Chat: React.FC = () => {
     };
     
     setSocket(ws);
-  }, [user, selectedUser, socket, maxReconnectAttempts]);
+  }, [user, selectedUser, socket, maxReconnectAttempts, incrementUnread, users]);
 
   const disconnectWebSocket = useCallback(() => {
     if (socket) {
@@ -250,7 +336,7 @@ const Chat: React.FC = () => {
         disconnectWebSocket();
       };
     }
-  }, [selectedUser?.id, user?.id]); // Only depend on IDs to avoid infinite loops
+  }, [selectedUser, user, connectWebSocket, disconnectWebSocket]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -310,6 +396,51 @@ const Chat: React.FC = () => {
 
   const handleCloseAlert = () => {
     setAlert({ ...alert, open: false });
+  };
+
+  const formatRelativeTime = (timestamp: string | null) => {
+    if (!timestamp) {
+      return 'No activity yet';
+    }
+    const target = new Date(timestamp).getTime();
+    if (Number.isNaN(target)) {
+      return 'No activity yet';
+    }
+    const diff = Date.now() - target;
+    if (diff < 0) {
+      return 'In a moment';
+    }
+    const units = [
+      { label: 'd', value: 1000 * 60 * 60 * 24 },
+      { label: 'h', value: 1000 * 60 * 60 },
+      { label: 'm', value: 1000 * 60 },
+      { label: 's', value: 1000 },
+    ];
+    for (const unit of units) {
+      const count = Math.floor(diff / unit.value);
+      if (count >= 1) {
+        return `${count}${unit.label} ago`;
+      }
+    }
+    return 'Just now';
+  };
+
+  const formatDuration = (ms: number | null) => {
+    if (!ms) {
+      return '—';
+    }
+    const totalSeconds = Math.round(ms / 1000);
+    if (totalSeconds < 60) {
+      return `${totalSeconds}s`;
+    }
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes < 60) {
+      return `${minutes}m${seconds ? ` ${seconds}s` : ''}`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h${remainingMinutes ? ` ${remainingMinutes}m` : ''}`;
   };
 
   const formatMessageTime = (timestamp: string | undefined) => {
@@ -385,6 +516,7 @@ const Chat: React.FC = () => {
       
       <Box
         sx={{
+          position: 'relative',
           display: 'grid',
           gridTemplateColumns: {
             xs: '1fr',
@@ -392,23 +524,62 @@ const Chat: React.FC = () => {
             lg: '300px 1fr'
           },
           gap: 2,
-          height: 'calc(100vh - 180px)'
+          height: 'calc(100vh - 180px)',
+          backgroundImage: 'linear-gradient(180deg, rgba(99,102,241,0.05), rgba(15,23,42,0.02))',
+          borderRadius: 4,
+          padding: 1,
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: 0,
+            background: 'radial-gradient(circle at top left, rgba(14,165,233,0.2), transparent 45%)',
+            zIndex: 0,
+            borderRadius: 32,
+            pointerEvents: 'none'
+          },
+          '& > *': {
+            position: 'relative',
+            zIndex: 1
+          }
         }}
       >
         {/* Users List */}
         <Paper 
-          elevation={2} 
+          elevation={3} 
           sx={{ 
             height: '100%', 
-            borderRadius: 2,
+            borderRadius: 3,
             overflow: 'hidden',
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            position: 'relative',
+            background: 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(236,72,153,0.08))',
+            border: '1px solid rgba(99, 102, 241, 0.15)',
+            backdropFilter: 'blur(10px)'
           }}
         >
-          <Typography variant="h6" sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
-            {user?.is_admin ? 'All Users' : 'Friends'}
-          </Typography>
+          <Box sx={{ p: 2, borderBottom: '1px solid rgba(255,255,255,0.4)', background: 'rgba(15, 23, 42, 0.15)' }}>
+            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+              {user?.is_admin ? 'All Users' : 'Friends'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              {contactSearch ? `Filtering ${filteredUsers.length} contact(s)` : `${users.length} contact(s) available`}
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Search by name or username"
+              value={contactSearch}
+              onChange={(e) => setContactSearch(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                )
+              }}
+            />
+          </Box>
           <List sx={{ flexGrow: 1, overflow: 'auto' }}>
             {users.length === 0 ? (
               <ListItem>
@@ -431,15 +602,27 @@ const Chat: React.FC = () => {
                   }
                 />
               </ListItem>
+            ) : filteredUsers.length === 0 ? (
+              <ListItem>
+                <ListItemText
+                  primary="No contacts match your search"
+                  secondary={`Try refining "${contactSearch || 'your search'}"`}
+                />
+              </ListItem>
             ) : (
-              users.map((u) => (
+              filteredUsers.map((u) => (
                 <React.Fragment key={u.id}>
                   <ListItemButton
                     selected={selectedUser?.id === u.id}
                     onClick={() => handleUserSelect(u)}
                     sx={{
                       '&.Mui-selected': {
-                        backgroundColor: 'rgba(94, 53, 177, 0.1)',
+                        backgroundColor: 'rgba(99, 102, 241, 0.18)',
+                        backdropFilter: 'blur(6px)',
+                        color: 'primary.contrastText'
+                      },
+                      '&:hover': {
+                        backgroundColor: 'rgba(99, 102, 241, 0.12)',
                       },
                     }}
                   >
@@ -474,12 +657,16 @@ const Chat: React.FC = () => {
         
         {/* Chat Area */}
         <Paper 
-          elevation={2} 
+          elevation={4} 
           sx={{ 
             height: '100%', 
             display: 'flex', 
             flexDirection: 'column',
-            borderRadius: 2
+            borderRadius: 3,
+            overflow: 'hidden',
+            background: 'linear-gradient(145deg, rgba(255,255,255,0.95), rgba(248,250,252,0.85))',
+            border: '1px solid rgba(15, 23, 42, 0.05)',
+            boxShadow: '0px 20px 45px -30px rgba(15, 23, 42, 0.8)'
           }}
         >
           {selectedUser ? (
@@ -517,6 +704,100 @@ const Chat: React.FC = () => {
                 </Box>
               </Box>
               
+            {/* Conversation Insights */}
+            <Box
+              sx={{
+                px: 2,
+                py: 2,
+                borderBottom: '1px solid rgba(99, 102, 241, 0.15)',
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.7), rgba(248,250,252,0.9))'
+              }}
+            >
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Conversation insights
+              </Typography>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
+                  gap: 2
+                }}
+              >
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 3,
+                    background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(14,165,233,0.12))',
+                    color: '#0f172a'
+                  }}
+                >
+                  <Typography variant="caption" sx={{ letterSpacing: 1, textTransform: 'uppercase' }}>
+                    Conversation Pulse
+                  </Typography>
+                  <Typography variant="h4" sx={{ mt: 1, mb: 0.5 }}>
+                    {conversationStats.totalMessages}
+                  </Typography>
+                  <Typography variant="body2" color="rgba(15, 23, 42, 0.8)">
+                    {conversationStats.totalMessages ? `Last ping ${formatRelativeTime(conversationStats.lastMessageTime)}` : 'Start a new conversation'}
+                  </Typography>
+                </Box>
+
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 3,
+                    background: 'linear-gradient(135deg, rgba(244,63,94,0.15), rgba(249,115,22,0.12))'
+                  }}
+                >
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="caption" sx={{ letterSpacing: 1, textTransform: 'uppercase' }}>
+                      Safety Monitor
+                    </Typography>
+                    <Chip
+                      size="small"
+                      color={conversationStats.abusiveCount === 0 ? 'success' : 'warning'}
+                      label={conversationStats.abusiveCount === 0 ? 'Clean' : 'Review'}
+                    />
+                  </Box>
+                  <Typography variant="h4" sx={{ mt: 1, mb: 0.5 }}>
+                    {conversationStats.abusiveCount}
+                  </Typography>
+                  <Tooltip title={`${conversationStats.abusePercentage.toFixed(1)}% of conversation flagged`}>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(100, conversationStats.abusePercentage)}
+                      sx={{
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: 'rgba(255, 255, 255, 0.4)',
+                        '& .MuiLinearProgress-bar': {
+                          borderRadius: 4
+                        }
+                      }}
+                    />
+                  </Tooltip>
+                </Box>
+
+                <Box
+                  sx={{
+                    p: 2,
+                    borderRadius: 3,
+                    background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(129,140,248,0.12))'
+                  }}
+                >
+                  <Typography variant="caption" sx={{ letterSpacing: 1, textTransform: 'uppercase' }}>
+                    Response Tempo
+                  </Typography>
+                  <Typography variant="h4" sx={{ mt: 1, mb: 0.5 }}>
+                    {formatDuration(conversationStats.averageResponseMs)}
+                  </Typography>
+                  <Typography variant="body2" color="rgba(15, 23, 42, 0.8)">
+                    Average time between replies
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+            
               {/* Messages */}
               <Box sx={{ 
                 flexGrow: 1, 
@@ -607,7 +888,7 @@ const Chat: React.FC = () => {
                               color: isCurrentUser ? 'rgba(255, 255, 255, 0.7)' : 'text.secondary'
                             }}
                           >
-                            {new Date(message.created_at).toLocaleTimeString()}
+                            {formatMessageTime(message.created_at)}
                           </Typography>
                         </Paper>
                       </Box>

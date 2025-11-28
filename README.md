@@ -122,6 +122,7 @@ CyberShield provides a comprehensive solution that:
    Create a `.env` file in the backend directory with:
    ```
    GROQ_API_KEY=your_groq_api_key
+   HF_TOKEN=your_huggingface_token
    SECRET_KEY=your_secret_key_for_jwt
    ```
 
@@ -143,10 +144,11 @@ CyberShield provides a comprehensive solution that:
    npm install
    ```
 
-2. Configure API endpoint:
+2. Configure API endpoint and WebSocket base URL:
    Create a `.env` file in the frontend directory with:
    ```
    REACT_APP_API_URL=http://localhost:8000
+   REACT_APP_WEBSOCKET_URL=ws://localhost:8000
    ```
 
 3. Start the frontend development server:
@@ -155,6 +157,18 @@ CyberShield provides a comprehensive solution that:
    ```
 
 4. Access the application at `http://localhost:3000`
+
+### Deploying the Frontend to Vercel
+
+1. Commit the repository so that the root-level `vercel.json` file is available remotely.
+2. In the Vercel dashboard (or via `vercel` CLI), create a new project by importing this repository. The configuration file automatically points the build to `frontend/package.json`.
+3. Define the required environment variables for both Preview and Production deployments:
+   - `REACT_APP_API_URL` → public HTTPS URL of the FastAPI backend (for local testing you can keep `http://localhost:8000`).
+   - `REACT_APP_WEBSOCKET_URL` → public WebSocket endpoint of the backend (e.g., `wss://api.example.com`).
+4. Make sure the backend service is reachable from the deployed frontend (host it on a platform that supports FastAPI + WebSockets, such as Railway, Render, or a VM).
+5. Trigger a deployment. Vercel will run `npm install` and `npm run build` inside the `frontend` folder and serve the generated static assets with correct client-side routing fallbacks.
+
+> **Security note:** The sensitive backend-only values you received (`GROQ_API_KEY`, `HF_TOKEN`, `SECRET_KEY`) must never be committed to the repository. Store them as environment variables on the backend hosting provider (or use `vercel env add` if you later move the backend into Vercel serverless functions).
 
 ## Default Credentials
 
