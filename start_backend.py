@@ -18,10 +18,10 @@ if str(backend_dir) not in sys.path:
 # Verify we can import app
 try:
     import app.main
-    print(f"✓ Successfully imported app.main")
-    print(f"✓ Working directory: {os.getcwd()}")
+    print("[OK] Successfully imported app.main")
+    print(f"[OK] Working directory: {os.getcwd()}")
 except ImportError as e:
-    print(f"✗ Failed to import app.main: {e}")
+    print(f"[FAIL] Failed to import app.main: {e}")
     print(f"Current directory: {os.getcwd()}")
     print(f"Backend directory: {backend_dir}")
     print(f"Python path: {sys.path}")
